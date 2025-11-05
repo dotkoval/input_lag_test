@@ -1,0 +1,47 @@
+/*
+input_lag_test by OPQA.Space/.koval
+*/
+	DEFINE	ENABLE_BEEP
+
+BORDER_COLOR	EQU #07	; 7 = white
+BEEP_DELAY	EQU #46	; ~870T, ~2kHz
+
+	device zxspectrum128
+
+MAINENTRY	EQU #8000
+	ORG MAINENTRY
+		di
+; Initializing constants
+; H = border + no beeper
+; L = border + beeper
+; C = beep generator delay
+
+	IFDEF ENABLE_BEEP
+		ld hl,BORDER_COLOR << 8 | BORDER_COLOR | #10
+		ld c,BEEP_DELAY
+	ELSE
+		ld l,BORDER_COLOR
+	ENDIF
+
+; Main routine loop
+main
+
+; Reading input (any key)
+		xor a : in a,(#fe)
+		cpl : and #1f
+		jr z,key_not_pressed
+key_pressed
+		ld a,l
+	IFDEF ENABLE_BEEP
+		out (#fe),a
+		ld b,c : djnz $
+		ld a,h : out (#fe),a
+		ld b,c : djnz $
+	ENDIF
+key_not_pressed
+		out (#fe),a
+		jr main
+
+	labelslist "input_lag_test.labels"			; labels for Xpeccy
+	savetap "input_lag_test.tap", MAINENTRY
+	savesna "input_lag_test.sna", MAINENTRY
