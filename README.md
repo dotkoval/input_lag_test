@@ -22,8 +22,8 @@ The beep helps measure audio latency, but keep in mind:
 
 ## Builds
 Pre-built versions are available in the repository:
-- [Developer builds](tree/main/builds)
-- [Builds with **TAP** and **TRD** loaders](tree/main/builds/loaders)
+- [Developer builds](builds)
+- [Builds with **TAP** and **TRD** loaders](builds/loaders)
 
 ## Use Cases
 - Compare **input lag** across emulators
