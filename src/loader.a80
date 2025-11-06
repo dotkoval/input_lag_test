@@ -1,0 +1,66 @@
+	device zxspectrum128
+
+ENTRY	equ #8000
+	org ENTRY
+DATASTART
+	incbin "builds/lagtest.bin"
+DATAEND
+
+; ----------------------------------------------------------------------------------------------
+; BASIC tokens
+
+ZXB_CLEAR	equ #FD
+ZXB_VAL	equ #B0
+ZXB_REM	equ #EA
+ZXB_OUT	equ #DF
+ZXB_POKE	equ #F4
+ZXB_LOAD	equ #EF
+ZXB_CODE	equ #AF
+ZXB_RANDOMIZE	equ #F9
+ZXB_USR	equ #C0
+
+; ----------------------------------------------------------------------------------------------
+; Tape loader
+	org #5C00
+BASIC_START	
+		db 0,0
+		dw LINE_LEN
+BASIC_LINE		db ZXB_CLEAR,ZXB_VAL,'"32767":'
+		db ZXB_LOAD,'"lagtest"',ZXB_CODE,':'
+		db ZXB_RANDOMIZE,ZXB_USR,ZXB_VAL,'"32768"'
+		db 13
+BASIC_END
+LINE_LEN	equ BASIC_END-BASIC_LINE
+BASIC_LEN	equ BASIC_END-BASIC_START
+CODESIZE	equ DATASTART-ENTRY
+
+	emptytap "builds/loader/lagtest.tap"
+	savetap "builds/loader/lagtest.tap",BASIC,"lagtest",BASIC_START,BASIC_LEN,0
+	savetap "builds/loader/lagtest.tap",CODE,"lagtest",ENTRY,DATAEND-ENTRY
+
+; ----------------------------------------------------------------------------------------------
+; TR-DOS loader
+	org #5C00
+TRD_BASIC_START	
+		db 0,0
+		dw TRD_LINE0_LEN
+TRD_LINE0
+TRD_BASIC_LINE		db ZXB_CLEAR,ZXB_VAL,'"32767":'
+		db ZXB_RANDOMIZE,ZXB_USR,ZXB_VAL,'"15619":',ZXB_REM,":"
+		db ZXB_LOAD,'"lagtest"',ZXB_CODE
+		db 13
+TRD_LINE0_END
+		db 0,1 : dw TRD_LINE1_LEN
+TRD_LINE1
+		db ZXB_RANDOMIZE,ZXB_USR,ZXB_VAL,'"32768"'
+		db 13
+TRD_LINE1_END
+TRD_BASIC_END
+
+TRD_LINE0_LEN	equ TRD_LINE0_END-TRD_LINE0
+TRD_LINE1_LEN	equ TRD_LINE1_END-TRD_LINE1
+TRD_BASIC_LEN	equ TRD_BASIC_END-TRD_BASIC_START
+
+	emptytrd "builds/loader/lagtest.trd"
+	savetrd "builds/loader/lagtest.trd","lagtest.B",TRD_BASIC_START,TRD_BASIC_LEN,0
+	savetrd "builds/loader/lagtest.trd","lagtest.C",ENTRY,DATAEND-ENTRY
