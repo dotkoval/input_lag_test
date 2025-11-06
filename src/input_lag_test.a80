@@ -1,47 +1,193 @@
 /*
 input_lag_test by OPQA.Space/.koval
 */
-	DEFINE	ENABLE_BEEP
-
-BORDER_COLOR	EQU #07	; 7 = white
-BEEP_DELAY	EQU #46	; ~870T, ~2kHz
-
 	device zxspectrum128
 
-MAINENTRY	EQU #8000
-	ORG MAINENTRY
+BORDER_COLOR	equ #04	; 7 = white
+BEEP_DELAY	equ #46	; ~870T, ~2kHz
+
+KEY_COLOR	equ 4
+KEY_COLOR_PRESSED equ 2<<3 | 7 | 64
+
+MAINENTRY	equ #8000
+	org MAINENTRY
+; ----------------------------------------------------------------------------------------------
+; init screen
 		di
+
+		ld hl,#4000 : ld de,#4001 : ld bc,#1800 : ld (hl),l : ldir	; Clear screen data
+		ld (hl),#07 : ld bc,#2FF : ldir			; Clear screen attributes 
+		ld hl,#57c0 : ld de,#57c1 : ld bc,#1f : ld (hl),-1 : ldir	; drawing line separator
+
+		xor a : ld (23659),a			; modify BASIC var for printing at bottom lines
+
+		ld sp,$				; Set stack here
+
+		ld a,2 : call #1601			; open channel #2
+		ld de,keyboard_map
+		ld bc,keyboard_map.end - keyboard_map
+		call #203c				; print string
+
+; Shifting single-character key names for centering
+		;inc b				; #FF+1 = 0 (even #FF is fine for our case)
+		ld c,4				; shifting 4-times
+.roll_outer
+		ld hl,#477f				; starting from the end of top 1/6 screen
+.roll_inner
+	dup 4
+		rl (hl) : dec l
+	edup
+	org $-1
+		dec hl				; replacing last `dec l` with dec `dec hl`
+		res 7,l				; rotate only upper 1/6 of the screen
+		djnz .roll_inner
+		dec c : jr nz,.roll_outer
+
+		ld de,keyboard_over
+		ld bc,keyboard_over.end - keyboard_over
+		call #203c				; print string
+
+		ld hl,%0000001001000000 : ld (#4572),hl		; custom symbol for spacebar
+		ld hl,%1111111001111111 : ld (#4672),hl
+
+; ----------------------------------------------------------------------------------------------
+; init IM2-table
+int_init
+		ld hl,#BE00				; Table address (#BE00..BF00)
+		ld a,#BF				; Vector (->#BFBF)
+		ld (hl),a
+		inc l
+		jr nz,$-2
+		inc h
+		ld (hl),a
+
+		dec a : ld i,a				; Set table address (MSB)
+		ld a,#C3				; JP-opcode
+		ld hl,int_routine			; INT-handler
+		ld (#BFBF),a : ld (#BFBF+1),hl
+
+		; Enable IM2 and continue
+		im 2
+
+		push hl				; dummy PUSH to not corrupt stack
+
+; ----------------------------------------------------------------------------------------------
+; Interrupt routine
+; No need to save registers as we will start-over routine and will not change stack
+; DE - contains counter in string format: 00 = #3030
+int_routine
+		pop hl				; dummy POP to not corrupt stack
+keys_status = $+1
+		ld a,#00 : or a : jr nz,.check
+.reset						; reset counter to value-1 when no key pressed 
+		ld de,#302F				; it will be incremented later
+.check
+		ld a,e
+		cp #39 ; ":"
+		jr nz,.minor_no_overflow
+.minor_overflow
+		ld e,#2F ; "0"-1
+		inc d
+.minor_no_overflow
+		inc e
+		ld a,d
+		cp #3A ; ":"
+		jr nz,.major_no_overflow
+.major_overflow
+		dec a : ld d,a : ld e,a 			; cap counter on DE="99"
+.major_no_overflow
+		ld a,#16 : rst #10			; "AT"
+		xor a : rst #10				; Y = 0
+		ld a,#1E  : rst #10			; X = 30
+
+		ld a,d : rst #10			; major digit
+		ld a,e : rst #10			; minor digit
+
+
+; now we can check specific key is pressed
+		push de
+		ld de,KEY_COLOR_PRESSED << 8 | KEY_COLOR		; DE - attributes for pressed/released keys accordingly
+
+		ld (.scan_end+1),sp : ld sp,keyboard_map_attrs		; reading attr-addresses thru SP
+
+		ld bc,#FEFE				; Starting from highest port-number
+.read_key_row
+		in a,(c)
+		cpl				; invert
+		and #1f				; keep only low 5-bits
+	dup 5
+		pop hl				; fetch ATTR-address
+		rrca
+		jr c,$+7
+		ld (hl),e : inc l : ld (hl),e
+		jr $+5
+		ld (hl),d : inc l : ld (hl),d
+	edup
+		rlc b				; BC -> port of the next keyboard row
+		jr c,.read_key_row			; 
+.scan_end
+		ld sp,#0000
+		pop de
+
+; enable interrupts and continue waiting for next one
+		ei
+
+; ----------------------------------------------------------------------------------------------
 ; Initializing constants
 ; H = border + no beeper
 ; L = border + beeper
 ; C = beep generator delay
-
-	IFDEF ENABLE_BEEP
+main_init
 		ld hl,BORDER_COLOR << 8 | BORDER_COLOR | #10
 		ld c,BEEP_DELAY
-	ELSE
-		ld l,BORDER_COLOR
-	ENDIF
 
+; ----------------------------------------------------------------------------------------------
 ; Main routine loop
-main
-
+main_loop
 ; Reading input (any key)
 		xor a : in a,(#fe)
-		cpl : and #1f
+		cpl : and #1f : ld (keys_status),a
 		jr z,key_not_pressed
 key_pressed
 		ld a,l
-	IFDEF ENABLE_BEEP
 		out (#fe),a
 		ld b,c : djnz $
 		ld a,h : out (#fe),a
 		ld b,c : djnz $
-	ENDIF
 key_not_pressed
-		out (#fe),a
-		jr main
+		out (#fe),a : jr main_loop
 
-	labelslist "input_lag_test.labels"			; labels for Xpeccy
-	savetap "input_lag_test.tap", MAINENTRY
-	savesna "input_lag_test.sna", MAINENTRY
+; ----------------------------------------------------------------------------------------------
+keyboard_map
+		db 22,22,0,13				; AT Y,X
+		db 16,7,17,1				; INK/PAPER (7/1)
+		db "ZX EMU INPUT LAG TEST  .koval'25"
+		db 22,0,1				; AT Y,X
+		db 16,7,17,0				; INK/PAPER (7/0)
+		db "1 2 3 4 5 6 7 8 9 0",13
+		db " Q W E R T Y U I O P",13
+		db " A S D F G H J K L"
+		db 22,3,3,"Z X C V B N M"
+.end
+keyboard_over
+		db 22,2,18				; AT Y,X
+		db "en",13
+		db "cs",22,3,16,"ss"
+		db 22,0,24,"Frame:",19,1
+.end
+
+keyboard_map_attrs
+		dw #5860, #5862, #5864, #5866, #5868
+		dw #5840, #5842, #5844, #5846, #5848
+		dw #5820, #5822, #5824, #5826, #5828
+		dw #5800, #5802, #5804, #5806, #5808
+		dw #5812, #5810, #580e, #580c, #580a
+		dw #5832, #5830, #582e, #582c, #582a
+		dw #5852, #5850, #584e, #584c, #584a
+		dw #5872, #5870, #586e, #586c, #586a
+
+; ----------------------------------------------------------------------------------------------
+	savebin "builds/lagtest.bin", MAINENTRY, $-MAINENTRY		; just binary (for using in version with custom loader)
+	labelslist "builds/input_lag_test.labels"			; labels for Xpeccy
+	savetap "builds/input_lag_test.tap", MAINENTRY
+	savesna "builds/input_lag_test.sna", MAINENTRY
