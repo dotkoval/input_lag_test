@@ -1,1 +1,6 @@
-﻿*.a80 linguist-language=Assembly
+﻿# Excluding generated binaries
+builds/** linguist-generated=true
+
+# Forcing Z80 Assembly code detection
+src/** linguist-detectable=true
+*.a80 linguist-language=Assembly
